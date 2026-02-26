@@ -1,0 +1,233 @@
+import React, { useEffect, useRef, useState, useMemo } from 'react';
+
+const THEME = {
+  void: '#010102',
+  glass: 'rgba(255, 255, 255, 0.005)',
+  border: 'rgba(255, 255, 255, 0.03)',
+  text: '#FFFFFF',
+  accent: '#D4FF00',
+  accentDark: '#1A1D00',
+  glow: 'rgba(212, 255, 0, 0.2)'
+};
+
+const PHASES = [
+  {
+    id: "PRIMORDIAL",
+    coord: [0, 0, 0],
+    label: "01 // THE VOID",
+    desc: "Information density at the absolute zero point."
+  },
+  {
+    id: "ACCELERATION",
+    coord: [0, -20, -40],
+    label: "02 // KINETIC FLOW",
+    desc: "The transition from potential to realized momentum."
+  },
+  {
+    id: "SINGULARITY",
+    coord: [15, -40, -80],
+    label: "03 // MARKET CAPTURE",
+    desc: "The total collapse of competition into our gravity."
+  }
+];
+
+export default function App() {
+  const canvasRef = useRef(null);
+  const [isReady, setIsReady] = useState(false);
+  const [activePhase, setActivePhase] = useState(0);
+  const scrollRef = useRef(0);
+  const targetScroll = useRef(0);
+  const mouse = useRef({ x: 0, y: 0 });
+
+  // Load Three.js
+  useEffect(() => {
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
+    script.onload = () => setIsReady(true);
+    document.head.appendChild(script);
+  }, []);
+
+  useEffect(() => {
+    if (!isReady || !window.THREE) return;
+
+    const THREE = window.THREE;
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ 
+      canvas: canvasRef.current, 
+      antialias: true, 
+      alpha: true 
+    });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+    const count = 80000;
+    const positions = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 3);
+    const sizes = new Float32Array(count);
+
+    const color1 = new THREE.Color(THEME.accent);
+    const color2 = new THREE.Color(THEME.void);
+
+    for (let i = 0; i < count; i++) {
+      const i3 = i * 3;
+      const radius = Math.random() * 50;
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2 * Math.random() - 1);
+
+      positions[i3] = radius * Math.sin(phi) * Math.cos(theta);
+      positions[i3 + 1] = radius * Math.sin(phi) * Math.sin(theta);
+      positions[i3 + 2] = radius * Math.cos(phi) - (i * 0.01);
+
+      const mixedColor = color1.clone().lerp(color2, Math.random() * 0.9);
+      colors[i3] = mixedColor.r;
+      colors[i3 + 1] = mixedColor.g;
+      colors[i3 + 2] = mixedColor.b;
+
+      sizes[i] = Math.random() * 2;
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+    const material = new THREE.PointsMaterial({
+      size: 0.05,
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.6,
+      blending: THREE.AdditiveBlending,
+      sizeAttenuation: true
+    });
+
+    const points = new THREE.Points(geometry, material);
+    scene.add(points);
+
+    const grid = new THREE.GridHelper(200, 40, THEME.accent, THEME.void);
+    grid.position.y = -20;
+    grid.material.opacity = 0.05;
+    grid.material.transparent = true;
+    scene.add(grid);
+
+    const onWheel = (e) => {
+      targetScroll.current += e.deltaY * 0.01;
+      targetScroll.current = Math.max(0, Math.min(100, targetScroll.current));
+    };
+
+    const onTouchMove = (e) => {
+      if (e.touches[0]) {
+        targetScroll.current += (e.touches[0].clientY * -0.01);
+        targetScroll.current = Math.max(0, Math.min(100, targetScroll.current));
+      }
+    };
+
+    const onMouseMove = (e) => {
+      mouse.current.x = (e.clientX / window.innerWidth) * 2 - 1;
+      mouse.current.y = -(e.clientY / window.innerHeight) * 2 + 1;
+    };
+
+    window.addEventListener('wheel', onWheel, { passive: true });
+    window.addEventListener('touchmove', onTouchMove, { passive: true });
+    window.addEventListener('mousemove', onMouseMove);
+
+    const clock = new THREE.Clock();
+
+    const animate = () => {
+      const time = clock.getElapsedTime();
+      scrollRef.current += (targetScroll.current - scrollRef.current) * 0.05;
+      
+      const zPos = -scrollRef.current;
+      camera.position.z = 15 + zPos;
+      camera.position.x += (mouse.current.x * 5 - camera.position.x) * 0.02;
+      camera.position.y += (mouse.current.y * 5 + 2 - camera.position.y) * 0.02;
+
+      points.rotation.z = time * 0.05;
+      points.rotation.y = Math.sin(time * 0.1) * 0.1;
+
+      const currentPhase = Math.floor(scrollRef.current / 33.34);
+      if (currentPhase !== activePhase) setActivePhase(Math.min(currentPhase, PHASES.length - 1));
+
+      renderer.render(scene, camera);
+      requestAnimationFrame(animate);
+    };
+
+    animate();
+
+    const handleResize = () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    };
+    window.addEventListener('resize', handleResize);
+
+    return () => {
+      window.removeEventListener('wheel', onWheel);
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('touchmove', onTouchMove);
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [isReady]);
+
+  return (
+    <div className="fixed inset-0 w-full h-screen overflow-hidden select-none" style={{ background: THEME.void }}>
+      <canvas ref={canvasRef} className="absolute inset-0 pointer-events-none" />
+      
+      <div className="relative z-10 w-full h-full p-6 md:p-12 flex flex-col justify-between pointer-events-none">
+        
+        {/* Header Structure */}
+        <div className="flex justify-between items-start w-full">
+          <div className="flex flex-col gap-1">
+            <div className="text-[10px] font-bold tracking-[0.4em] text-white/30 uppercase">System Identity</div>
+            <div className="text-xl md:text-2xl font-black tracking-tighter">PHOENIX_ARCHITECT</div>
+          </div>
+          <div className="group pointer-events-auto cursor-pointer">
+            <div className="w-8 md:w-12 h-[1px] bg-white/20 mb-2 group-hover:bg-[#D4FF00] transition-colors" />
+            <div className="w-5 md:w-8 h-[1px] bg-white/20 ml-auto group-hover:bg-[#D4FF00] transition-colors" />
+          </div>
+        </div>
+
+        {/* Corrected Kinetic Container: No truncation, full expansion */}
+        <div className="w-full flex flex-col items-start justify-center min-h-[40vh]">
+          <div className="w-full h-auto overflow-visible">
+            <h1 
+              className="text-[14vw] md:text-[12vw] leading-[0.85] font-black italic tracking-tighter text-white transition-transform duration-700 ease-out whitespace-nowrap md:whitespace-normal"
+              style={{ 
+                transform: `translateY(${(scrollRef.current % 33.34) * -1.5}px)`,
+                textShadow: `0 0 50px rgba(255,255,255,0.05)`
+              }}
+            >
+              {PHASES[activePhase]?.label.split(' // ')[1]}
+            </h1>
+          </div>
+          <div className="mt-6 md:mt-10 overflow-visible">
+            <p className="text-sm md:text-lg font-light text-white/40 leading-relaxed max-w-[80vw] md:max-w-sm transition-opacity duration-500">
+              {PHASES[activePhase]?.desc}
+            </p>
+          </div>
+        </div>
+
+        {/* Footer Metrics */}
+        <div className="flex justify-between items-end border-t border-white/5 pt-6 md:pt-8 w-full">
+          <div className="hidden md:block text-[10px] font-mono text-white/20">
+            LOC_LAT: 33.4484 / LOC_LONG: -112.0740
+          </div>
+          <div className="flex gap-8 md:gap-12 w-full md:w-auto justify-between md:justify-end">
+            <div className="flex flex-col">
+              <span className="text-[9px] md:text-[10px] font-bold text-[#D4FF00]">VELOCITY</span>
+              <span className="text-lg md:text-xl font-mono">{(targetScroll.current - scrollRef.current).toFixed(3)}</span>
+            </div>
+            <div className="flex flex-col">
+              <span className="text-[9px] md:text-[10px] font-bold text-white/30">Z_DEPTH</span>
+              <span className="text-lg md:text-xl font-mono">-{scrollRef.current.toFixed(1)}m</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Neural Grain */}
+      <div className="absolute inset-0 opacity-[0.15] pointer-events-none contrast-150 mix-blend-overlay"
+           style={{ backgroundImage: `url("https://grainy-gradients.vercel.app/noise.svg")` }} />
+    </div>
+  );
+}
